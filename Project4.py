@@ -251,7 +251,8 @@ row2 = st.columns([1,1])
 
 # --- Line Chart: Trend Volume per Hari ---
 df_trend = df.groupby(df[col_date].dt.date, as_index=False)[col_qty].sum()
-fig_line = px.line(df_trend, x=col_date, y=col_qty, markers=True, template="plotly_dark", color_discrete_sequence=[NEON_PINK])
+df_trend.rename(columns={col_date: "Tanggal", col_qty: "Volume"}, inplace=True)
+fig_line = px.line(df_trend, x="Tanggal", y="Volume", markers=True, template="plotly_dark", color_discrete_sequence=[NEON_PINK])
 fig_line.update_traces(line_width=3, marker=dict(size=7, color=NEON_BLUE))
 fig_line.update_layout(
     plot_bgcolor=CARD_BG,
