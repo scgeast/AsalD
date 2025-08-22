@@ -90,9 +90,9 @@ except Exception as e:
     st.error(f"Gagal membaca file: {e}")
     st.stop()
 
-# Kolom yang wajib (gunakan insensitive/robust matching)
+# Robust: treat all column names as string
 def find_col(df, keys):
-    normed = {c.lower().replace(" ", "").replace("_", ""): c for c in df.columns}
+    normed = {str(c).lower().replace(" ", "").replace("_", ""): str(c) for c in df.columns}
     for k in keys:
         k_norm = k.lower().replace(" ", "").replace("_", "")
         for col_norm, orig in normed.items():
@@ -110,6 +110,17 @@ col_avgvol = find_col(df, ["AVG Vol.day"])
 col_sched = find_col(df, ["Schedule RMC"])
 col_actual = find_col(df, ["Actual Supply"])
 
+# Validasi kolom utama
+missing_cols = []
+for col, label in [(col_area,"AREA"), (col_plant,"PLANT"), (col_status,"Status Plant"),
+                   (col_annfm,"ANN FM Target"), (col_mtd,"MTD Vol"), (col_achv,"% Achievement"),
+                   (col_avgvol,"AVG Vol.day"), (col_sched,"Schedule RMC"), (col_actual,"Actual Supply")]:
+    if col is None:
+        missing_cols.append(label)
+if missing_cols:
+    st.error(f"Kolom berikut tidak ditemukan di file: {', '.join(missing_cols)}")
+    st.stop()
+
 # Normalisasi data achievement %
 def parse_percent(x):
     try:
@@ -123,21 +134,15 @@ def parse_percent(x):
 df[col_achv] = df[col_achv].astype(str).str.replace("#DIV/0!", "0").str.replace("%", "").str.replace(",", ".")
 df[col_achv] = pd.to_numeric(df[col_achv], errors="coerce").fillna(0)
 
-# AREA & plant filter
+# Sidebar filter
 areas = ["All"] + sorted(df[col_area].dropna().unique().tolist())
 plants = ["All"] + sorted(df[col_plant].dropna().unique().tolist())
 area = st.sidebar.selectbox("Filter Area", areas)
 plant = st.sidebar.selectbox("Filter Plant", plants)
 st.sidebar.markdown("---")
 
-mask = (df[col_area].isin([area]) if area != "All" else True) & \
-       (df[col_plant].isin([plant]) if plant != "All" else True)
-if area != "All":
-    df_disp = df[df[col_area] == area].copy()
-else:
-    df_disp = df.copy()
-if plant != "All":
-    df_disp = df_disp[df_disp[col_plant] == plant]
+mask = ((df[col_area]==area) if area != "All" else True) & ((df[col_plant]==plant) if plant != "All" else True)
+df_disp = df[mask].copy() if (area!="All" or plant!="All") else df.copy()
 
 # ============ DASHBOARD HEADER ============
 st.markdown(f"""
@@ -149,6 +154,14 @@ st.markdown(f"""
 st.markdown("<hr style='opacity:.11;'>", unsafe_allow_html=True)
 
 # ============ KPI CARDS ============
+def safe_mean(series):
+    vals = pd.to_numeric(series, errors="coerce").dropna()
+    return vals.mean() if not vals.empty else 0
+
+def safe_sum(series):
+    vals = pd.to_numeric(series, errors="coerce").dropna()
+    return vals.sum() if not vals.empty else 0
+
 kpi_data = [
     {
         "label": "Total Plant",
@@ -158,25 +171,25 @@ kpi_data = [
     },
     {
         "label": "Total MTD Vol",
-        "value": f"{df_disp[col_mtd].sum():,.0f}",
+        "value": f"{safe_sum(df_disp[col_mtd]):,.0f}",
         "icon": "📦",
         "color": NEON_BLUE,
     },
     {
         "label": "AVG Vol/Day",
-        "value": f"{df_disp[col_avgvol].mean():.2f}",
+        "value": f"{safe_mean(df_disp[col_avgvol]):.2f}",
         "icon": "📊",
         "color": NEON_GREEN,
     },
     {
         "label": "AVG Achievement (%)",
-        "value": f"{df_disp[col_achv].mean():.1f}%",
+        "value": f"{safe_mean(df_disp[col_achv]):.1f}%",
         "icon": "🎯",
         "color": NEON_PINK,
     },
     {
         "label": "AVG Actual Supply (%)",
-        "value": f"{df_disp[col_actual].apply(parse_percent).mean():.1f}%",
+        "value": f"{safe_mean(df_disp[col_actual].apply(parse_percent)):.1f}%",
         "icon": "🚚",
         "color": NEON_PURPLE,
     }
@@ -200,42 +213,48 @@ st.markdown('<div class="section-title">📊 Performance Charts</div>', unsafe_a
 chartrow = st.columns([2,1])
 
 # --- Bar: % Achievement per Plant ---
-bar_colors = df_disp[col_achv].apply(
-    lambda x: NEON_GREEN if x>=100 else NEON_ORANGE if x>=80 else NEON_PINK
-)
-fig_bar = px.bar(
-    df_disp, x=col_plant, y=col_achv, color=col_achv,
-    color_discrete_sequence=[NEON_GREEN, NEON_ORANGE, NEON_PINK],
-    template="plotly_dark",
-    text=col_achv
-)
-fig_bar.update_traces(texttemplate='%{text:.0f}%', marker_color=bar_colors, marker_line_width=0, textposition='outside')
-fig_bar.update_layout(
-    xaxis_title="Plant", yaxis_title="% Achievement", 
-    showlegend=False, plot_bgcolor=CARD_BG, paper_bgcolor=CARD_BG, 
-    margin=dict(l=10,r=10,b=30,t=40), font_color=TEXT_WHITE
-)
-chartrow[0].plotly_chart(fig_bar, use_container_width=True)
+if not df_disp.empty:
+    bar_colors = df_disp[col_achv].apply(
+        lambda x: NEON_GREEN if x>=100 else NEON_ORANGE if x>=80 else NEON_PINK
+    )
+    fig_bar = px.bar(
+        df_disp, x=col_plant, y=col_achv, color=col_achv,
+        color_discrete_sequence=[NEON_GREEN, NEON_ORANGE, NEON_PINK],
+        template="plotly_dark",
+        text=col_achv
+    )
+    fig_bar.update_traces(texttemplate='%{text:.0f}%', marker_color=bar_colors, marker_line_width=0, textposition='outside')
+    fig_bar.update_layout(
+        xaxis_title="Plant", yaxis_title="% Achievement", 
+        showlegend=False, plot_bgcolor=CARD_BG, paper_bgcolor=CARD_BG, 
+        margin=dict(l=10,r=10,b=30,t=40), font_color=TEXT_WHITE
+    )
+    chartrow[0].plotly_chart(fig_bar, use_container_width=True)
+else:
+    chartrow[0].info("Tidak ada data untuk chart ini.")
 
 # --- Pie: Plant Achievement Grouping ---
 def ach_group(x):
     if x >= 100: return ">100%"
     elif x >= 80: return "80-100%"
     else: return "<80%"
-df_disp["ach_group"] = df_disp[col_achv].apply(ach_group)
-pie_df = df_disp.groupby("ach_group").size().reset_index(name="Count")
-fig_pie = px.pie(
-    pie_df, names="ach_group", values="Count",
-    color="ach_group", 
-    color_discrete_map={">100%": NEON_GREEN, "80-100%": NEON_ORANGE, "<80%": NEON_PINK},
-    template="plotly_dark", hole=0.55
-)
-fig_pie.update_traces(textinfo="percent+label", textfont_size=13, marker_line=dict(color=DARK_BG, width=2))
-fig_pie.update_layout(
-    showlegend=True, legend=dict(font=dict(color=TEXT_WHITE)), font_color=TEXT_WHITE,
-    plot_bgcolor=CARD_BG, paper_bgcolor=CARD_BG, margin=dict(l=10,r=10,b=20,t=30)
-)
-chartrow[1].plotly_chart(fig_pie, use_container_width=True)
+if not df_disp.empty:
+    df_disp["ach_group"] = df_disp[col_achv].apply(ach_group)
+    pie_df = df_disp.groupby("ach_group").size().reset_index(name="Count")
+    fig_pie = px.pie(
+        pie_df, names="ach_group", values="Count",
+        color="ach_group", 
+        color_discrete_map={">100%": NEON_GREEN, "80-100%": NEON_ORANGE, "<80%": NEON_PINK},
+        template="plotly_dark", hole=0.55
+    )
+    fig_pie.update_traces(textinfo="percent+label", textfont_size=13, marker_line=dict(color=DARK_BG, width=2))
+    fig_pie.update_layout(
+        showlegend=True, legend=dict(font=dict(color=TEXT_WHITE)), font_color=TEXT_WHITE,
+        plot_bgcolor=CARD_BG, paper_bgcolor=CARD_BG, margin=dict(l=10,r=10,b=20,t=30)
+    )
+    chartrow[1].plotly_chart(fig_pie, use_container_width=True)
+else:
+    chartrow[1].info("Tidak ada data untuk chart ini.")
 
 # --- Bar: Schedule vs Actual Supply per Plant ---
 st.markdown('<div class="section-title">🚚 Schedule vs Actual Supply</div>', unsafe_allow_html=True)
@@ -243,17 +262,20 @@ sched_df = df_disp.copy()
 sched_df["Schedule RMC"] = pd.to_numeric(sched_df[col_sched], errors="coerce").fillna(0)
 sched_df["Actual Supply"] = sched_df[col_actual].apply(parse_percent)
 sched_df = sched_df.dropna(subset=[col_sched, col_actual])
-sched_bar = px.bar(
-    sched_df, x=col_plant, y=["Schedule RMC", "Actual Supply"],
-    barmode="group", template="plotly_dark",
-    color_discrete_map={"Schedule RMC": NEON_BLUE, "Actual Supply": NEON_GREEN}
-)
-sched_bar.update_layout(
-    yaxis_title="Ton / %", xaxis_title="Plant",
-    plot_bgcolor=CARD_BG, paper_bgcolor=CARD_BG, font_color=TEXT_WHITE,
-    margin=dict(l=10,r=10,b=30,t=40)
-)
-st.plotly_chart(sched_bar, use_container_width=True)
+if not sched_df.empty:
+    sched_bar = px.bar(
+        sched_df, x=col_plant, y=["Schedule RMC", "Actual Supply"],
+        barmode="group", template="plotly_dark",
+        color_discrete_map={"Schedule RMC": NEON_BLUE, "Actual Supply": NEON_GREEN}
+    )
+    sched_bar.update_layout(
+        yaxis_title="Ton / %", xaxis_title="Plant",
+        plot_bgcolor=CARD_BG, paper_bgcolor=CARD_BG, font_color=TEXT_WHITE,
+        margin=dict(l=10,r=10,b=30,t=40)
+    )
+    st.plotly_chart(sched_bar, use_container_width=True)
+else:
+    st.info("Tidak ada data untuk chart ini.")
 
 # --- Table with highlight ---
 st.markdown('<div class="section-title">📋 Plant Table</div>', unsafe_allow_html=True)
@@ -265,7 +287,10 @@ def color_achv(val):
         else: return f"background-color:{NEON_PINK}33"
     except: return ""
 show_cols = [col_area, col_plant, col_status, col_annfm, col_mtd, col_achv, col_avgvol, col_sched, col_actual]
-st.dataframe(df_disp[show_cols].style.applymap(color_achv, subset=[col_achv]), use_container_width=True, hide_index=True)
+if not df_disp.empty:
+    st.dataframe(df_disp[show_cols].style.applymap(color_achv, subset=[col_achv]), use_container_width=True, hide_index=True)
+else:
+    st.info("Tidak ada data untuk ditampilkan di tabel.")
 
 # --- Download Button ---
 csv = df_disp.to_csv(index=False).encode('utf-8')
