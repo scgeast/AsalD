@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 from datetime import datetime
 
+
 # =========================
 # Page Config & Theme Toggle
 # =========================
