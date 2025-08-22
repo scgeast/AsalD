@@ -49,17 +49,20 @@ st.markdown(
 )
 
 # =========================
-# Header + Realtime Clock
+# Judul Dashboard
 # =========================
 st.markdown(
-    f"""
-    <div style='display:flex; align-items:center; justify-content:space-between;'>
-      <h1 style='margin:0;color:{text_color}'>🚀 Dashboard Monitoring Delivery And Sales</h1>
-      <div style='opacity:.9;color:{text_color};font-weight:600;'>⏱️ {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}</div>
+    """
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h1 style="display: flex; align-items: center; font-size: 28px;">
+            🚀 Dashboard Monitoring Delivery And Sales
+        </h1>
+        <h3 style="color:#6C63FF; font-weight:bold;">L23-51XE</h3>
     </div>
     """,
-    unsafe_allow_html=True,
+    unsafe_allow_html=True
 )
+
 
 # =========================
 # Helper Functions (Normalisasi & Visual)
