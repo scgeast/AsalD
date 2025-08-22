@@ -1,4 +1,3 @@
-# AsalD
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -492,4 +491,3 @@ if st.button("📥 Export ke Excel"):
         st.success("✅ Data berhasil diexport ke Excel!")
     except Exception as e:
         st.error(f"Gagal export: {e}")
-*UDH JALAN BAGUS* *TERBARU*
